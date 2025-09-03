@@ -1,34 +1,81 @@
-import os, time, uuid, base64, requests
-AUTH_URL=os.getenv('GIGACHAT_AUTH_URL','https://ngw.devices.sberbank.ru:9443/api/v2/oauth')
-API_BASE=os.getenv('GIGACHAT_API_URL','https://gigachat.devices.sberbank.ru/api/v1')
-SCOPE=os.getenv('GIGACHAT_SCOPE','GIGACHAT_API_PERS')
-AUTH_B64=os.getenv('GIGACHAT_AUTH'); CLIENT_ID=os.getenv('GIGACHAT_CLIENT_ID'); CLIENT_SECRET=os.getenv('GIGACHAT_CLIENT_SECRET')
-CA_BUNDLE=os.getenv('GIGACHAT_CA_BUNDLE')
-if CA_BUNDLE and os.path.exists(CA_BUNDLE): VERIFY=CA_BUNDLE
-else: VERIFY=os.getenv('GIGACHAT_VERIFY','true').lower() not in {'0','false','no'}
-class _TokenCache: token=None; exp=0.0
-def _auth_header():
-    if AUTH_B64: return f'Basic {AUTH_B64.strip()}'
-    if CLIENT_ID and CLIENT_SECRET:
-        raw=f"{CLIENT_ID}:{CLIENT_SECRET}".encode('utf-8')
-        return 'Basic '+base64.b64encode(raw).decode('utf-8')
-    raise AssertionError('Provide GIGACHAT_AUTH or GIGACHAT_CLIENT_ID/SECRET')
-def _get_token():
-    now=time.time()
-    if _TokenCache.token and (_TokenCache.exp-now)>60: return _TokenCache.token
-    headers={'Authorization':_auth_header(),'Content-Type':'application/x-www-form-urlencoded','RqUID':str(uuid.uuid4())}
-    data={'scope':SCOPE}
-    resp=requests.post(AUTH_URL,headers=headers,data=data,timeout=40,verify=VERIFY)
-    if resp.status_code!=200: raise RuntimeError(f'GigaChat OAuth error {resp.status_code}: {resp.text}')
-    payload=resp.json(); token=payload.get('access_token') or payload.get('accessToken')
-    if not token: raise RuntimeError(f'GigaChat OAuth: token missing: {payload}')
-    _TokenCache.token=token; _TokenCache.exp=time.time()+25*60; return token
+
+import os, json
+
+def _sec(name: str, default=None):
+    v = os.environ.get(name)
+    if v:
+        return v
+    try:
+        import streamlit as st  # type: ignore
+        v = st.secrets.get(name)  # type: ignore[attr-defined]
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    return default
+
 class GigaChat:
-    def __init__(self): self.model=os.getenv('GIGACHAT_MODEL','GigaChat')
-    def chat(self, messages, temperature=0.2, max_tokens=800):
-        token=_get_token(); url=f"{API_BASE}/chat/completions"
-        headers={'Authorization':f'Bearer {token}','Content-Type':'application/json; charset=utf-8'}
-        body={'model':self.model,'messages':messages,'temperature':temperature,'max_tokens':max_tokens}
-        r=requests.post(url,headers=headers,json=body,timeout=60,verify=VERIFY)
-        if r.status_code!=200: raise RuntimeError(f'GigaChat error {r.status_code}: {r.text}')
-        return r.json().get('choices',[{}])[0].get('message',{}).get('content','').strip()
+    def __init__(self, model=None):
+        import base64
+        self.model = model or _sec("GIGACHAT_MODEL", "GigaChat-Pro")
+        self.scope = _sec("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
+        self.auth_key = _sec("GIGACHAT_AUTH_KEY") or _sec("GIGACHAT_AUTH")
+        if not self.auth_key:
+            cid = _sec("GIGACHAT_CLIENT_ID")
+            csec = _sec("GIGACHAT_CLIENT_SECRET")
+            if cid and csec:
+                self.auth_key = base64.b64encode(f"{cid}:{csec}".encode()).decode()
+        ver = (_sec("GIGACHAT_VERIFY", "true") or "true").strip().lower()
+        self.verify = False if ver in ("0","false","no","off") else True
+        if not self.auth_key:
+            raise RuntimeError("GIGACHAT_AUTH_KEY (или CLIENT_ID/CLIENT_SECRET) не задан")
+        self._token = None
+
+    def _get_token(self) -> str:
+        import uuid, requests
+        if self._token:
+            return self._token
+        headers = {
+            "Authorization": f"Basic {self.auth_key}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "RqUID": str(uuid.uuid4()),
+        }
+        data = {"scope": self.scope}
+        r = requests.post(
+            "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+            headers=headers, data=data, timeout=60, verify=self.verify
+        )
+        r.raise_for_status()
+        self._token = r.json()["access_token"]
+        return self._token
+
+    def chat(self, messages_or_prompt, temperature: float=0.0, max_tokens=None, **kwargs) -> str:
+        import requests, uuid
+        token = self._get_token()
+        if isinstance(messages_or_prompt, str):
+            messages = [{"role":"user","content":messages_or_prompt}]
+        else:
+            messages = messages_or_prompt
+        payload = {"model": self.model, "messages": messages, "temperature": float(temperature)}
+        if max_tokens is not None:
+            payload["max_tokens"] = int(max_tokens)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "RqUID": str(uuid.uuid4()),
+        }
+        r = requests.post(
+            "https://gigachat.devices.sberbank.ru/api/v1/chat/completions",
+            headers=headers, json=payload, timeout=120, verify=self.verify
+        )
+        if r.status_code == 401:
+            self._token = None
+            return self.chat(messages_or_prompt, temperature=temperature, max_tokens=max_tokens, **kwargs)
+        r.raise_for_status()
+        j = r.json()
+        try:
+            return j["choices"][0]["message"]["content"]
+        except Exception:
+            return json.dumps(j, ensure_ascii=False)
