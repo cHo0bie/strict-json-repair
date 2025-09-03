@@ -1,0 +1,2 @@
+{"schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}, "raw": "{a: 'x',}"}
+{"schema": {"type": "object", "properties": {"category": {"type": "string", "enum": ["fraud", "card", "transfer", "service", "other"]}}, "required": ["category"]}, "raw": "{\"category\":\"fraud|card\"}"}

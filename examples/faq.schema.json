@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": [
+    "answer",
+    "citations",
+    "confidence"
+  ],
+  "properties": {
+    "answer": {
+      "type": "string"
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "additionalProperties": false
+}

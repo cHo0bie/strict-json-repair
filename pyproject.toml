@@ -1,0 +1,11 @@
+[project]
+name="strict-json-repair"
+version="0.2.0"
+description="Strict JSON validation + gentle repair for LLM outputs"
+authors=[{name="Vadim Chumanov"}]
+readme="README.md"
+requires-python=">=3.10"
+dependencies=["jsonschema>=4.22.0","pydantic>=2.7.0","requests>=2.31.0"]
+[build-system]
+requires=["setuptools>=67"]
+build-backend="setuptools.build_meta"
