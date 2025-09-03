@@ -1,6 +1,6 @@
 [project]
 name="strict-json-repair"
-version="0.2.0"
+version="0.2.1"
 description="Strict JSON validation + gentle repair for LLM outputs"
 authors=[{name="Vadim Chumanov"}]
 readme="README.md"

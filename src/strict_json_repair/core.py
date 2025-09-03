@@ -25,6 +25,13 @@ def _single_to_double_quotes(text: str) -> str:
     text = re.sub(r':\s*\'([^\']*)\'', r': "\1"', text)                   # values
     return text
 
+def _fix_leading_dot_numbers(text: str) -> str:
+    # Matches: (: or , or [) then optional space, then [+/-]?.12 and closes with ,}] 
+    def repl(m): 
+        prefix, sign, frac, suffix = m.group(1), m.group(2) or '', m.group(3), m.group(4)
+        return f"{prefix}{sign}0{frac}{suffix}"
+    return re.sub(r'([:\[,]\s*)([+\-]?)(\.\d+)(\s*[,}\]])', repl, text)
+
 def extract_json(text: str) -> Optional[str]:
     text = _strip_bom(text)
     text = _strip_code_fences(text)
@@ -34,7 +41,8 @@ def extract_json(text: str) -> Optional[str]:
     snippet = m.group(0)
     snippet = _quote_unquoted_keys(snippet)
     snippet = _single_to_double_quotes(snippet)
-    snippet = re.sub(r',\s*([}\]])', r'\1', snippet)
+    snippet = _fix_leading_dot_numbers(snippet)
+    snippet = re.sub(r',\s*([}\]])', r'\1', snippet)  # trailing commas
     return snippet
 
 def coerce_enums(data: Any, schema: Dict[str, Any]) -> Any:
