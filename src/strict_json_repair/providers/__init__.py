@@ -1,28 +1,11 @@
-
 import os
-
-def _sec(name: str):
-    v = os.environ.get(name)
-    if v:
-        return v
-    try:
-        import streamlit as st  # type: ignore
-        v = st.secrets.get(name)  # type: ignore[attr-defined]
-        if v:
-            return str(v)
-    except Exception:
-        pass
-    return None
-
+from .openai_provider import OpenAIChat
+from .gigachat_provider import GigaChat
 def _hydrate():
-    return None
-
-from .openai_provider import OpenAIChat  # existing
-from .gigachat_provider import GigaChat  # new
-
+    try:
+        import streamlit as st
+        for k,v in st.secrets.items():
+            if isinstance(v,str) and k not in os.environ: os.environ[k]=v
+    except Exception: pass
 def get_provider():
-    _hydrate()
-    use_giga = bool(_sec("GIGACHAT_AUTH_KEY") or _sec("GIGACHAT_AUTH") or _sec("GIGACHAT_CLIENT_ID") or os.getenv("PROVIDER","").lower()=="gigachat")
-    if use_giga:
-        return GigaChat()
-    return OpenAIChat()
+    _hydrate(); return GigaChat() if os.getenv('PROVIDER','openai').lower()=='gigachat' else OpenAIChat()
